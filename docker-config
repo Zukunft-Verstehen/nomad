@@ -1,0 +1,2 @@
+DOCKER_CONTAINER="nomad"
+DOCKER_REGISTRY="zukunftverstehen"

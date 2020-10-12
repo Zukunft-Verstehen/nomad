@@ -13,8 +13,8 @@ set -e
 # NOMAD_CONFIG_DIR isn't exposed as a volume but you can compose additional
 # config files in there if you use this image as a base, or use NOMAD_LOCAL_CONFIG
 # below.
-NOMAD_DATA_DIR=${NOMAD_DATA_DIR:-"/nomad/data"}
-NOMAD_CONFIG_DIR=${NOMAD_CONFIG_DIR:-"/etc/nomad"}
+NOMAD_DATA_DIR=${NOMAD_DATA_DIR:-"/opt/nomad"}
+NOMAD_CONFIG_DIR=${NOMAD_CONFIG_DIR:-"/etc/nomad.d"}
 
 # You can also set the NOMAD_LOCAL_CONFIG environemnt variable to pass some
 # Nomad configuration JSON without having to bind any volumes.
@@ -44,22 +44,5 @@ elif nomad --help "$1" 2>&1 | grep -q "nomad $1"; then
     set -- nomad "$@"
 fi
 
-# If we are running Nomad, make sure it executes as the proper user.
-if [ "$1" = 'nomad' ]; then
-    # If the data or config dirs are bind mounted then chown them.
-    # Note: This checks for root ownership as that's the most common case.
-    if [ "$(stat -c %u /nomad/data)" != "$(id -u root)" ]; then
-        chown root:root /etc/nomad
-    fi
+dumb-init -- "$@"
 
-    # If requested, set the capability to bind to privileged ports before
-    # we drop to the non-root user. Note that this doesn't work with all
-    # storage drivers (it won't work with AUFS).
-    if [ ! -z ${NOMAD+x} ]; then
-        setcap "cap_net_bind_service=+ep" /bin/nomad
-    fi
-
-    set -- gosu root "$@"
-fi
-
-exec "$@"

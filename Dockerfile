@@ -1,61 +1,38 @@
-FROM alpine:3.6
+FROM alpine:3.12
 
-LABEL maintainer="DJ Enriquez <denrie.enriquezjr@gmail.com> (@djenriquez)"
+LABEL maintainer="Tom Schamberger <tom@zukunft-verstehen.com>"
+
+ENV RELEASE=0.12.5
+ENV GLIBC_VERSION=2.25-r0
 
 RUN addgroup nomad && \
     adduser -S -G nomad nomad
 
-ENV GLIBC_VERSION "2.25-r0"
-ENV GOSU_VERSION 1.10
-ENV DUMB_INIT_VERSION 1.2.0
-
 RUN set -x && \
-    apk --update add --no-cache --virtual .gosu-deps dpkg curl gnupg && \
-    apk add --no-cache ca-certificates && \
-    curl -L -o /tmp/glibc-${GLIBC_VERSION}.apk https://github.com/andyshinn/alpine-pkg-glibc/releases/download/${GLIBC_VERSION}/glibc-${GLIBC_VERSION}.apk && \
+    apk --update add --no-cache --virtual .deps curl unzip && \
+    curl -L -o /tmp/glibc-${GLIBC_VERSION}.apk "https://github.com/andyshinn/alpine-pkg-glibc/releases/download/${GLIBC_VERSION}/glibc-${GLIBC_VERSION}.apk" && \
     apk add --allow-untrusted /tmp/glibc-${GLIBC_VERSION}.apk && \
     rm -rf /tmp/glibc-${GLIBC_VERSION}.apk /var/cache/apk/* && \
-    curl -L -o /usr/local/bin/dumb-init https://github.com/Yelp/dumb-init/releases/download/v${DUMB_INIT_VERSION}/dumb-init_${DUMB_INIT_VERSION}_amd64 && \
+    curl -L -o /usr/local/bin/dumb-init "https://github.com/Yelp/dumb-init/releases/download/v1.2.2/dumb-init_1.2.2_amd64" && \
     chmod +x /usr/local/bin/dumb-init && \
-    dpkgArch="$(dpkg --print-architecture | awk -F- '{ print $NF }')" && \
-    curl -L -o /usr/local/bin/gosu "https://github.com/tianon/gosu/releases/download/$GOSU_VERSION/gosu-$dpkgArch" && \
-    curl -L -o /usr/local/bin/gosu.asc "https://github.com/tianon/gosu/releases/download/$GOSU_VERSION/gosu-$dpkgArch.asc" && \
-    export GNUPGHOME="$(mktemp -d)" && \
-    gpg --keyserver hkp://p80.pool.sks-keyservers.net:80 --recv-keys B42F6819007F00F88E364FD4036A9C25BF357DD4 && \
-    gpg --batch --verify /usr/local/bin/gosu.asc /usr/local/bin/gosu && \
-    rm -rf "$GNUPGHOME" /usr/local/bin/gosu.asc && \
-    chmod +x /usr/local/bin/gosu && \
-    gosu nobody true && \
-    apk del .gosu-deps
+    curl -L -o /tmp/nomad_${RELEASE}_linux_amd64.zip "https://releases.hashicorp.com/nomad/${RELEASE}/nomad_${RELEASE}_linux_amd64.zip" && \
+    unzip -d /usr/local/bin /tmp/nomad_${RELEASE}_linux_amd64.zip && \
+    rm /tmp/* && \
+    chmod a+x /usr/local/bin/nomad && \
+    apk del .deps && \
+    nomad version
 
-ENV NOMAD_VERSION 0.8.4
+RUN set -x && \
+    apk --update add --no-cache ca-certificates openssl && \
+    update-ca-certificates
 
-RUN set -x \
-  && apk --update add --no-cache --virtual .nomad-deps gnupg curl \
-  && cd /tmp \
-  && curl -L -o nomad_${NOMAD_VERSION}_linux_amd64.zip https://releases.hashicorp.com/nomad/${NOMAD_VERSION}/nomad_${NOMAD_VERSION}_linux_amd64.zip \
-  && curl -L -o nomad_${NOMAD_VERSION}_SHA256SUMS      https://releases.hashicorp.com/nomad/${NOMAD_VERSION}/nomad_${NOMAD_VERSION}_SHA256SUMS \
-  && curl -L -o nomad_${NOMAD_VERSION}_SHA256SUMS.sig  https://releases.hashicorp.com/nomad/${NOMAD_VERSION}/nomad_${NOMAD_VERSION}_SHA256SUMS.sig \
-  && export GNUPGHOME="$(mktemp -d)" \
-  && gpg --keyserver hkp://p80.pool.sks-keyservers.net:80 --recv-keys 91A6E7F85D05C65630BEF18951852D87348FFC4C \
-  && gpg --batch --verify nomad_${NOMAD_VERSION}_SHA256SUMS.sig nomad_${NOMAD_VERSION}_SHA256SUMS \
-  && grep nomad_${NOMAD_VERSION}_linux_amd64.zip nomad_${NOMAD_VERSION}_SHA256SUMS | sha256sum -c \
-  && unzip -d /bin nomad_${NOMAD_VERSION}_linux_amd64.zip \
-  && chmod +x /bin/nomad \
-  && rm -rf "$GNUPGHOME" nomad_${NOMAD_VERSION}_linux_amd64.zip nomad_${NOMAD_VERSION}_SHA256SUMS nomad_${NOMAD_VERSION}_SHA256SUMS.sig \
-  && apk del .nomad-deps
-  
-RUN set -x \
-  && apk --update add --no-cache ca-certificates openssl \
-  && update-ca-certificates
-
-
-RUN mkdir -p /nomad/data && \
-    mkdir -p /etc/nomad && \
-    chown -R nomad:nomad /nomad
+RUN mkdir -p /opt/nomad && \
+    mkdir -p /etc/nomad.d && \
+    chown -R nomad:nomad /opt/nomad && \
+    chown -R nomad:nomad /etc/nomad.d
 
 EXPOSE 4646 4647 4648 4648/udp
 
-ADD start.sh /usr/local/bin/start.sh
+ADD start.sh /start.sh
 
-ENTRYPOINT ["/usr/local/bin/start.sh"]
+ENTRYPOINT ["/start.sh"]
